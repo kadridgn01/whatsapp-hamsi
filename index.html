@@ -598,23 +598,6 @@ body{
 /* Eski 'sticky' app kurallarını etkisiz bırakmak için: */
 .app{ position: fixed !important; }
 
-/* === YENİ GÜÇLÜ DÜZELTME BLOĞU === */
-body {
-  /* 1. Arka planı düzelt (mavi degradeyi iptal et) */
-  background: var(--bg2) !important;
-}
-
-.thread {
-  /* 2. Kart ile mesaj balonu arasını aç */
-  gap: 20px !important;
-}
-
-.inputwrap {
-  /* 3. Alt barı 'safe area' ile düzelt */
-  padding: 10px var(--gutter) calc(env(safe-area-inset-bottom, 20px) + 10px) !important;
-}
-/* === DÜZELTME BLOĞU SONU === */
-
 </style>
 </head>
 <body>
@@ -668,17 +651,21 @@ body {
 
 
   <!-- THREAD -->
-<main class="thread">
+  <main class="thread">
+
+    <!-- FOTOĞRAFLAR: TEK TEK ALT ALTA -->
     <section class="photo-card">
      <button class="photo" type="button" data-hd="assets/hamsi.gif">
         <img src="assets/hamsi.gif" alt="Foto 1">
       </button>
-          </section>
-    
-    <div class="msg">
+
+      <div class="msg">
       <strong>İLK İŞ GÜNÜN HAYIRLI OLSUN.</strong>
       <span class="t">09:35</span>
     </div>
+    </section>
+
+    
   </main>
 
   <!-- INPUT (mikrofon yok) -->
