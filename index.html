@@ -614,6 +614,30 @@ body {
   padding: 10px var(--gutter) calc(env(safe-area-inset-bottom, 20px) + 10px) !important;
 }
 /* === DÜZELTME BLOĞU SONU === */
+  /* === YENİ GÜÇLÜ DÜZELTME BLOĞU === */
+body {
+  /* 1. Arka planı düzelt (mavi degradeyi iptal et) */
+  background: var(--bg2) !important;
+}
+
+.thread {
+  /* 2. Kart ile mesaj balonu arasını aç */
+  gap: 20px !important;
+}
+
+.inputwrap {
+  /* 3. Alt barı 'safe area' ile düzelt */
+  padding: 10px var(--gutter) calc(env(safe-area-inset-bottom, 20px) + 10px) !important;
+}
+
+/* 4. Hamsinin etrafındaki beyaz çerçeveyi kaldır */
+.photo-card {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+/* === DÜZELTME BLOĞU SONU === */
 
 </style>
 </head>
