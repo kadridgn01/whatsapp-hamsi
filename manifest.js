@@ -1,5 +1,5 @@
 {
-  "name": "Müdire Hanım Rize — Sohbet",
+  "name": "Dursun - Mesaj",
   "short_name": "Sohbet",
   "start_url": "./",
   "scope": "./",
