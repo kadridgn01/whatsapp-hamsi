@@ -1,91 +1,749 @@
-// ---- Service Worker (robust) ----
-const VERSION = 'v6';                                   // her yayında artır
-const STATIC_CACHE  = `chat-static-${VERSION}`;
-const RUNTIME_CACHE = `chat-runtime-${VERSION}`;
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Dursun - Mesaj</title>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Dursun - Mesaj">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-// scope'a göre mutlak URL üret (GitHub Pages alt yolu için güvenli)
-const SCOPE = self.registration ? self.registration.scope : self.location.href;
-const U = (p) => new URL(p, SCOPE).toString();
+<style>
+:root{
+  /* buraya avatar görselini koy */
+  --avatar-url: url('assets/photo1.jpg');
 
-const PRECACHE = [
-  U('./'),
-  U('./index.html'),
-  U('./manifest.json'),
-  U('./assets/icon-192.png'),
-  U('./assets/icon-512.png'),
-];
+  --bg:#efe6df; --bg2:#f7eee6;
+  --ink:#1e2630; --muted:#7a8a99;
+  --blue1:#36a5ff; --blue2:#0b6dff;        /* başlık gradyanı */
+  --me1:#3aa8ff;  --me2:#0b77ff;           /* giden balon */
+  --sheet:#fff;   --sheet-border:#cfe2ff;  /* foto kartı */
+  --gutter:clamp(14px,3.6vw,20px);
+  --shadow-1:0 12px 32px rgba(16,79,180,.16);
+  --shadow-2:0 3px 12px rgba(0,0,0,.08);
+}
+*{box-sizing:border-box} html,body{margin:0}
+body{
+  background:linear-gradient(180deg,#dfefff 0%,var(--bg) 8%,var(--bg2) 100%);
+  color:var(--ink);
+  font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+  -webkit-font-smoothing:antialiased;
+}
+.phone{max-width:480px;margin:0 auto}
 
-// Install: statikleri önden al
-self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(STATIC_CACHE).then((c) => c.addAll(PRECACHE)));
-  self.skipWaiting();
+/* STATUS */
+.status{height:32px;padding:6px var(--gutter) 0;color:#fff;
+  background:linear-gradient(180deg,#52b8ff 0%,#0b6dff 100%);
+  display:flex;align-items:center}
+.clock{font-weight:800;text-shadow:0 1px 0 rgba(0,0,0,.2)}
+.sb{margin-left:auto;display:flex;gap:10px;opacity:.95}
+.sb svg{width:18px;height:18px}
+
+/* APP BAR */
+.app{position:sticky;top:0;z-index:10;padding:12px var(--gutter);
+  background:linear-gradient(180deg,var(--blue1),var(--blue2));
+  color:#fff;box-shadow:0 18px 36px rgba(0,0,0,.18)}
+.app-inner{display:flex;align-items:center;gap:12px}
+.app .back{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;
+  background:linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,.12))}
+.app .back svg{width:18px;height:18px}
+.app .avatar{width:36px;height:36px;border-radius:50%;
+  background:#fff var(--avatar-url) center/cover no-repeat;
+  border:2px solid rgba(255,255,255,.6)}
+.title{font-size:20px;font-weight:900;letter-spacing:.2px}
+.actions{margin-left:auto;display:flex;gap:12px}
+.actions .btn{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,.12))}
+
+/* THREAD */
+.thread{padding:14px var(--gutter) 120px;display:flex;flex-direction:column;gap:16px}
+
+/* MESSAGE BUBBLES */
+.msg{max-width:88%;padding:14px 16px;border-radius:18px;background:linear-gradient(180deg,#f4fbff,#e6f2ff);box-shadow:var(--shadow-2);position:relative}
+.msg .t{position:absolute;right:12px;bottom:-16px;color:#90a0b2;font-size:12px}
+.msg.me{align-self:flex-end;background:linear-gradient(180deg,var(--me1),var(--me2));color:#fff;border-bottom-right-radius:10px}
+.msg.me .t{color:#cfe6ff}
+.msg .tick{margin-left:6px;opacity:.9}
+
+/* STACKED PHOTO CARD */
+.photo-card{
+  background:var(--sheet);
+  border:2px solid var(--sheet-border);
+  border-radius:22px;
+  padding:10px;
+  box-shadow:var(--shadow-1);
+  margin-left:calc(-1*var(--gutter));
+  margin-right:calc(-1*var(--gutter));
+}
+/* FOTO — kare, tüm tarayıcılarda güvenli */
+.photo{
+  display:block;
+  overflow:hidden;
+  border-radius:16px;
+  aspect-ratio: 1 / 1;                 /* modern tarayıcılar */
+  background:#e6edf5;
+}
+.photo img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position:center;
+  display:block;
+}
+
+/* FALLBACK: aspect-ratio yoksa (eski iOS vb.) kareyi ::before ile kilitle */
+@supports not (aspect-ratio: 1 / 1) {
+  .photo{ position:relative; }
+  .photo::before{ content:""; display:block; padding-top:100%; }
+  .photo img{ position:absolute; inset:0; }
+}
+
+/* HD + saat */
+.badge{
+  position:absolute;left:8px;bottom:8px;height:18px;min-width:28px;padding:0 6px;
+  display:grid;place-items:center;border-radius:999px;font-size:10px;font-weight:800;
+  background:#fff;color:#0b6bff;border:1px solid rgba(255,255,255,.9);box-shadow:0 1px 3px rgba(0,0,0,.12)
+}
+.stamp{position:absolute;right:8px;bottom:8px;color:#fff;font-weight:800;font-size:12px;text-shadow:0 2px 8px rgba(0,0,0,.45)}
+
+/* INPUT BAR (mikrofon yok) */
+.inputwrap{position:fixed;left:0;right:0;bottom:0;padding:10px var(--gutter) calc(env(safe-area-inset-bottom) + 10px);background:linear-gradient(180deg,rgba(255,255,255,0) 0%,var(--bg2) 30%,var(--bg2) 100%)}
+.input{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:28px;background:linear-gradient(180deg,#fff,#f5f7fb);border:1px solid rgba(0,0,0,.06);box-shadow:0 10px 28px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.7)}
+.input .ib{width:40px;height:40px;border-radius:14px;display:grid;place-items:center;background:#eef3f8}
+.input input{flex:1;border:0;outline:0;background:transparent;font-size:16px;color:#1a2430}
+
+/* LIGHTBOX */
+#lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:100;align-items:center;justify-content:center}
+#lightbox img{max-width:100vw;max-height:100vh;object-fit:contain}
+#lightbox .close{position:fixed;top:14px;right:14px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.15);color:#fff;font-weight:900;font-size:20px;border:1px solid rgba(255,255,255,.25)}
+
+/* desktop vitrin */
+@media (min-width:640px){
+  .phone{margin:22px auto;border-radius:28px;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.18)}
+}
+/* === CHAT GÖRÜNÜMÜ — foto kartları solda, sağda boşluk === */
+.photo-card{
+  align-self:flex-start;
+  max-width:86%;              /* sağda boşluk – 82–90 arasında oynat */
+  margin-left:0; margin-right:0;
+}
+
+  /* solda hizala, sağda boşluk bırak */
+  align-self: flex-start !important;
+  max-width: 86% !important;      /* sağda ~%14 boşluk görünür */
+  padding: 10px !important;       /* kart içi; 8–12 arası oynatabilirsin */
+  border-radius: 22px !important;
+  border: 2px solid var(--sheet-border) !important;
+  box-shadow: var(--shadow-1) !important;
+}
+
+/* istersen bu boşluğu arttır/azalt:
+   86% -> 80% yaparsan sağ boşluk daha da büyür */
+
+/* === AVATAR — her yerde kusursuz daire === */
+.app .avatar{
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 50% !important;
+  object-fit: cover !important;       /* img olduğu için */
+  display: block !important;
+  border: 2px solid rgba(255,255,255,.6) !important;
+  background: none !important;         /* önceki background’ı iptal */
+}
+
+/* (opsiyonel) metin balonları da soldan gelsin dersen: */
+.msg{ align-self: flex-start; }
+.msg.me{ align-self: flex-end; } /* giden mavi yine sağda kalsın */
+/* ==== TOPBAR: daha kompakt + başlık tek satır ==== */
+.app{ padding:8px var(--gutter) !important; }
+.app-inner{ gap:10px !important; }
+.back{ width:34px !important; height:34px !important; }
+.app .avatar{
+  width:34px !important; height:34px !important;
+  flex:0 0 34px !important; border-radius:50% !important;
+  object-fit:cover !important; display:block !important;
+  border:2px solid rgba(255,255,255,.6) !important;
+}
+.title{
+  font-size:18px !important; font-weight:800 !important;
+  white-space:nowrap !important; overflow:hidden !important;
+  text-overflow:ellipsis !important; max-width:60vw !important;
+}
+.actions .btn{ width:32px !important; height:32px !important; border-radius:10px !important; }
+
+/* ==== FOTO: rozetlerin kaymasını düzelt (ebeveyn hep relative) ==== */
+.photo{
+  position:relative !important;                /* ÖNEMLİ: rozetler için referans */
+  display:block !important;
+  overflow:hidden !important;
+  border-radius:16px !important;
+  aspect-ratio:1/1 !important;                 /* modern tarayıcılar */
+  background:#e6edf5 !important;
+}
+.photo img{
+  width:100% !important; height:100% !important;
+  object-fit:cover !important; object-position:center !important;
+  display:block !important;
+}
+/* Fallback: aspect-ratio yoksa kare kilidi */
+@supports not (aspect-ratio: 1 / 1) {
+  .photo::before{ content:""; display:block; padding-top:100%; }
+  .photo img{ position:absolute; inset:0; }
+}
+
+/* Rozet konumları */
+.badge{
+  left:8px !important; bottom:8px !important;
+  height:18px !important; min-width:28px !important; padding:0 6px !important;
+  border-radius:999px !important; font-size:10px !important; font-weight:800 !important;
+  background:#fff !important; color:#0b6bff !important;
+  border:1px solid rgba(255,255,255,.9) !important;
+  box-shadow:0 1px 3px rgba(0,0,0,.12) !important;
+}
+.stamp{
+  right:8px !important; bottom:8px !important;
+  color:#fff !important; font-weight:800 !important; font-size:12px !important;
+  text-shadow:0 2px 8px rgba(0,0,0,.45) !important;
+}
+
+/* ==== Foto kartları “karşıdan gelmiş” gibi solda, sağda boşluk ==== */
+.photo-card{
+  align-self:flex-start !important;
+  max-width:86% !important;        /* sağda boşluk – 82–90 arası oynat */
+  margin-left:0 !important; margin-right:0 !important;
+  padding:10px !important; border-radius:22px !important;
+  border:2px solid var(--sheet-border) !important; box-shadow:var(--shadow-1) !important;
+}
+
+/* Mesaj balonları hizası (gelen solda, giden sağda) */
+.msg{ align-self:flex-start !important; }
+.msg.me{ align-self:flex-end !important; }
+/* ===== TOP BAR FIX: daha ince bar + başlık tek satır, tamamen sığsın ===== */
+.app{ padding:6px var(--gutter) 8px !important; }             /* bar yüksekliği kısaldı */
+.app-inner{ gap:8px !important; align-items:center !important; }
+
+.back{ width:32px !important; height:32px !important; }       /* sol buton küçüldü */
+.app .avatar{
+  width:32px !important; height:32px !important;              /* avatar da 32 */
+  border-radius:50% !important; object-fit:cover !important;
+  border:2px solid rgba(255,255,255,.6) !important;
+}
+
+.title{
+  flex:1 1 auto !important;            /* alanı başlık alsın */
+  min-width:0 !important;
+  white-space:nowrap !important;        /* TEK SATIR */
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;    /* çok sıkışırsa zarif kesim */
+  font-weight:800 !important;
+  /* ekran daralınca yazıyı küçültüp tamamını sığdır: */
+  font-size:clamp(16px, 4.6vw, 20px) !important;
+  letter-spacing:.1px !important;
+}
+
+.actions{ gap:8px !important; flex:0 0 auto !important; }
+.actions .btn{
+  width:30px !important; height:30px !important;              /* sağdaki ikonlar küçüldü */
+  border-radius:10px !important;
+}
+
+/* çok dar cihazlarda ekstra sıkıştırma */
+@media (max-width: 360px){
+  .actions .btn{ width:28px !important; height:28px !important; }
+  .title{ font-size:clamp(15px, 4.8vw, 18px) !important; }
+}
+
+  /* ==== ÜST BAR TEMİZLİK & iOS SAFE AREA ==== */
+
+/* sahte status bar’ı tamamen gizle (HTML’den silmediysen) */
+.status{ display:none !important; }
+
+/* app bar: üst padding’i notch’a göre ayarla ve daha kompakt yap */
+.app{
+  /* üstte güvenli alan + küçük dikey padding */
+  padding: calc(env(safe-area-inset-top) + 6px) var(--gutter) 8px !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 10 !important;
+}
+
+/* başlık satırı daha sıkı ve tek satır */
+.app-inner{ gap:8px !important; align-items:center !important; }
+.back{ width:32px !important; height:32px !important; }
+
+.app .avatar{
+  width:32px !important; height:32px !important;
+  border-radius:50% !important; object-fit:cover !important;
+  border:2px solid rgba(255,255,255,.6) !important; display:block !important;
+}
+
+.title{
+  flex:1 1 auto !important; min-width:0 !important;
+  white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important;
+  font-weight:800 !important;
+  font-size:clamp(16px,4.6vw,20px) !important;
+}
+
+.actions{ gap:8px !important; }
+.actions .btn{ width:30px !important; height:30px !important; border-radius:10px !important; }
+
+/* çok dar cihazlarda daha da sıkıştır */
+@media (max-width:360px){
+  .actions .btn{ width:28px !important; height:28px !important; }
+  .title{ font-size:clamp(15px,4.8vw,18px) !important; }
+}
+/* === BAR YÜKSEKLİK DEĞİŞKENİ === */
+:root{ --appbar-h: 56px; }  /* bar yüksekliğini buradan yönet; 54–60 iyi durur */
+
+/* Üstte görünen alan (barın 1.5x’i) */
+.hero{
+  height: calc(var(--appbar-h) * 1.5);
+  /* üst kısım için hafif bir arka plan/derinlik verelim */
+  background: linear-gradient(180deg, rgba(11,109,255,.08), rgba(11,109,255,0) 70%);
+}
+
+/* Bar: sticky + güvenli alan */
+.app{
+  position: sticky !important;
+  top: env(safe-area-inset-top) !important;  /* notch altında yapışsın */
+  z-index: 50 !important;
+
+  /* kompakt padding; yüksekliği sabitlemek için min-height */
+  padding: 0 var(--gutter) !important;
+  min-height: var(--appbar-h) !important;
+
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* iç düzen – başlık ve ikonlar tek satırda kalsın */
+.app-inner{ gap:8px !important; width:100% !important; }
+.back{ width:32px !important; height:32px !important; }
+.app .avatar{
+  width:32px !important; height:32px !important; border-radius:50% !important;
+  object-fit:cover !important; border:2px solid rgba(255,255,255,.6) !important;
+}
+.title{
+  flex:1 1 auto !important; min-width:0 !important;
+  white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important;
+  font-size:clamp(16px,4.6vw,20px) !important; font-weight:800 !important;
+}
+.actions{ gap:8px !important; }
+.actions .btn{ width:30px !important; height:30px !important; border-radius:10px !important; }
+
+/* çok dar cihazlar için ekstra sıkılaştırma */
+@media (max-width:360px){
+  :root{ --appbar-h: 52px; }
+  .actions .btn{ width:28px !important; height:28px !important; }
+}
+/* === ÜST BANT: her zaman mavi, içerik görünmesin === */
+:root{ --appbar-h: 56px; } /* bar yüksekliği; 54–60 arası oynatabilirsin */
+
+.phone{ position:relative; z-index:1; }  /* topcoat altta kalsın */
+
+/* ekranın tepesine yapışık mavi zemin */
+.topcoat{
+  position:fixed;
+  top:0; left:0; right:0;
+  height: calc(env(safe-area-inset-top) + var(--appbar-h) * 1.5);
+  background: linear-gradient(180deg, var(--blue1), var(--blue2));
+  z-index:0;            /* app bar ve içerikten altta */
+  pointer-events:none;  /* dokunmaları engellemesin */
+}
+
+/* hero sadece boşluk için; rengi topcoat veriyor */
+.hero{ height: calc(var(--appbar-h) * 1.5); background: transparent; }
+
+/* bar notch altında sabit kalsın */
+.app{
+  position: sticky !important;
+  top: env(safe-area-inset-top) !important;
+  z-index: 2 !important;
+  min-height: var(--appbar-h) !important;
+  padding: 0 var(--gutter) !important;
+  display:flex !important; align-items:center !important;
+  background: linear-gradient(180deg, var(--blue1), var(--blue2)) !important;
+}
+
+/* iç düzen – tek satır başlık, küçük ikonlar */
+.app-inner{ width:100%; gap:8px !important; }
+.back{ width:32px !important; height:32px !important; }
+.app .avatar{
+  width:32px !important; height:32px !important; border-radius:50% !important;
+  object-fit:cover !important; border:2px solid rgba(255,255,255,.6) !important;
+}
+.title{
+  flex:1 1 auto !important; min-width:0 !important;
+  white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important;
+  font-weight:800 !important;
+  font-size:clamp(16px,4.6vw,20px) !important;
+}
+.actions{ gap:8px !important; }
+.actions .btn{ width:30px !important; height:30px !important; border-radius:10px !important; }
+
+@media (max-width:360px){
+  :root{ --appbar-h: 52px; }
+  .actions .btn{ width:28px !important; height:28px !important; }
+}
+/* === ÜST BANT sade: sadece safe-area + bar yüksekliği kadar === */
+:root{ --appbar-h: 56px; } /* bar yüksekliği – istersen 54–60 arası oynat */
+
+.topcoat{
+  position:fixed; top:0; left:0; right:0;
+  height: calc(env(safe-area-inset-top) + var(--appbar-h));
+  background: linear-gradient(180deg, var(--blue1), var(--blue2));
+  z-index: 0; pointer-events: none;
+}
+
+/* hero tamamen kapalı (fazla maviyi kaldırır) */
+.hero{ display:none !important; height:0 !important; }
+
+/* bar notch altında yapışık kalsın */
+.app{
+  position: sticky !important;
+  top: env(safe-area-inset-top) !important;
+  z-index: 2 !important;
+  min-height: var(--appbar-h) !important;
+  padding: 0 var(--gutter) !important;
+  display:flex !important; align-items:center !important;
+  background: linear-gradient(180deg, var(--blue1), var(--blue2)) !important;
+}
+
+/* başlık/ikon ölçüleri (tek satır) */
+.app-inner{ width:100%; gap:8px !important; }
+.back{ width:32px !important; height:32px !important; }
+.app .avatar{ width:32px !important; height:32px !important; border-radius:50% !important; object-fit:cover !important; border:2px solid rgba(255,255,255,.6) !important; }
+.title{ flex:1 1 auto !important; min-width:0 !important; white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important; font-size:clamp(16px,4.6vw,20px) !important; font-weight:800 !important; }
+.actions{ gap:8px !important; }
+.actions .btn{ width:30px !important; height:30px !important; border-radius:10px !important; }
+/* ===== Sabit (fixed) başlık + güvenli alan ===== */
+:root{ --appbar-h: 56px; } /* bar yüksekliği; 54–60 arası oynatabilirsin */
+
+/* Mavi arkaplan şeridi — bar + status alanını kaplar (overscroll'da da görünür) */
+.topcoat{
+  position:fixed; top:0; left:0; right:0;
+  height: calc(env(safe-area-inset-top) + var(--appbar-h));
+  background: linear-gradient(180deg, var(--blue1), var(--blue2));
+  z-index: 0; pointer-events: none;
+}
+
+/* Bar: her zaman sabit */
+.app{
+  position: fixed !important;
+  top: env(safe-area-inset-top) !important;   /* notch altına yasla */
+  left: 0; right: 0;
+  z-index: 2 !important;
+  min-height: var(--appbar-h) !important;
+  padding: 0 var(--gutter) !important;
+  display:flex !important; align-items:center !important;
+  background: linear-gradient(180deg, var(--blue1), var(--blue2)) !important;
+}
+
+/* İç düzen: tek satır başlık + küçük ikonlar */
+.app-inner{ width:100%; gap:8px !important; }
+.back{ width:32px !important; height:32px !important; }
+.app .avatar{
+  width:32px !important; height:32px !important;
+  border-radius:50% !important; object-fit:cover !important;
+  border:2px solid rgba(255,255,255,.6) !important;
+}
+.title{
+  flex:1 1 auto !important; min-width:0 !important;
+  white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important;
+  font-weight:800 !important; font-size:clamp(16px,4.6vw,20px) !important;
+}
+.actions{ gap:8px !important; }
+.actions .btn{ width:30px !important; height:30px !important; border-radius:10px !important; }
+
+/* İçeriği barın altına iten spacer */
+.app-spacer{
+  height: calc(env(safe-area-inset-top) + var(--appbar-h));
+}
+
+/* Önceden eklediysen hero’yu tamamen kapat (fazla mavi olmasın) */
+.hero{ display:none !important; height:0 !important; }
+
+/* Katmanlama: içerik bar/topcoat üstünde dursun */
+.phone{ position:relative; z-index:1; }
+
+/* Çok dar cihazlar için sıkılaştırma */
+@media (max-width:360px){
+  :root{ --appbar-h: 52px; }
+  .actions .btn{ width:28px !important; height:28px !important; }
+}
+
+  /* === Sesli Mesaj Balonu === */
+.voice-msg{
+  --h: 56px;
+  --p: 0%;                                /* progress yüzdesi JS ile güncellenir */
+  align-self:flex-start;
+  display:flex; align-items:center; gap:12px;
+  padding:8px 14px; border-radius:28px;
+  background:linear-gradient(180deg,#fff,#e6f2ff);
+  box-shadow:0 8px 24px rgba(0,0,0,.12);
+  border:1px solid rgba(11,109,255,.10);
+  position:relative; max-width: min(680px, 100%);
+}
+.voice-msg .vm-ava{ position:relative; flex:0 0 auto }
+.voice-msg .vm-ava img{
+  width:40px;height:40px;border-radius:50%;object-fit:cover;
+  box-shadow:0 2px 8px rgba(0,0,0,.15)
+}
+.voice-msg .vm-mic{
+  position:absolute; right:-2px; bottom:-2px;
+  width:18px;height:18px;border-radius:50%;
+  display:grid;place-items:center;
+  background:linear-gradient(180deg,#49a7ff,#0b74ff);
+  border:1px solid rgba(255,255,255,.7);
+  box-shadow:0 3px 8px rgba(11,119,255,.35);
+}
+
+.voice-msg .vm-play{
+  width:36px;height:36px;border-radius:50%;
+  display:grid;place-items:center;border:0;cursor:pointer;
+  background:linear-gradient(180deg,#43b3ff,#0b77ff);
+  box-shadow:0 8px 18px rgba(11,119,255,.35);
+}
+.voice-msg .vm-play .icon-pause{ display:none }
+.voice-msg.playing .vm-play .icon-play{ display:none }
+.voice-msg.playing .vm-play .icon-pause{ display:block }
+
+.voice-msg .vm-track{
+  position:relative; flex:1 1 auto; min-width:160px;
+  height:28px; display:flex; align-items:center;
+}
+.voice-msg .vm-wavewrap{ position:relative; width:100%; height:28px; }
+.voice-msg .vm-bars{ width:100%; height:100%; display:block }
+.voice-msg .vm-prog{
+  position:absolute; inset:0; overflow:hidden; width:var(--p);
+}
+.voice-msg .vm-dot{
+  position:absolute; top:50%; left:var(--p);
+  transform:translate(-50%,-50%); width:12px;height:12px;border-radius:50%;
+  background:#2a94ff; box-shadow:0 0 0 4px rgba(42,148,255,.15);
+}
+
+.voice-msg .vm-time{
+  margin-left:auto; color:#7e8fa4; font-weight:700; font-size:14px;
+  padding-left:8px;
+}
+
+/* Küçük ekranlarda daha kompakt */
+@media (max-width:360px){
+  .voice-msg{ gap:10px }
+  .voice-msg .vm-time{ font-size:12px }
+}
+/* Foto butonu link davranışı olmasın */
+.photo{
+  border:0; padding:0; margin:0;
+  background:none; cursor:pointer; width:100%;
+  display:block; text-align:inherit; appearance:none;
+}
+/* iOS'ta uzun basınca “Kaydet” menüsünü engelle */
+.photo img{
+  -webkit-touch-callout: none;
+  -webkit-user-select: none; user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none; /* tıklama butonda kalsın */
+}
+/* === SABİT APP BAR & BOŞLUK === */
+:root{ --appbar-h: 56px; }                 /* 54–60 arası oynatılabilir */
+.status{ display:none !important; }        /* sahte status bar kullanmıyoruz */
+
+.topcoat{
+  position:fixed; top:0; left:0; right:0;
+  height: calc(env(safe-area-inset-top) + var(--appbar-h));
+  background: linear-gradient(180deg, var(--blue1), var(--blue2));
+  z-index: 0; pointer-events: none;
+}
+
+.app{
+  position: fixed !important;
+  top: env(safe-area-inset-top) !important;
+  left: 0; right: 0;
+  height: var(--appbar-h) !important;
+  display:flex !important; align-items:center !important;
+  padding: 0 var(--gutter) !important;
+  background: linear-gradient(180deg, var(--blue1), var(--blue2)) !important;
+  z-index: 2 !important;
+}
+
+.app-spacer{
+  height: calc(env(safe-area-inset-top) + var(--appbar-h)) !important;
+}
+
+/* başlık/ikonlar tek satır */
+.app-inner{ width:100%; gap:8px !important; }
+.back{ width:32px !important; height:32px !important; }
+.app .avatar{
+  width:32px !important; height:32px !important;
+  border-radius:50% !important; object-fit:cover !important;
+  border:2px solid rgba(255,255,255,.6) !important;
+}
+.title{
+  flex:1 1 auto !important; min-width:0 !important;
+  white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important;
+  font-size:clamp(16px,4.6vw,20px) !important; font-weight:800 !important;
+}
+.actions{ gap:8px !important; }
+.actions .btn{ width:30px !important; height:30px !important; border-radius:10px !important; }
+
+@media (max-width:360px){
+  :root{ --appbar-h: 52px; }
+  .actions .btn{ width:28px !important; height:28px !important; }
+}
+
+/* ÇAKIŞMAYI ÖNLEME: varsa eski hero/topbar varyantlarını kapat */
+.hero{ display:none !important; height:0 !important; }
+/* Eski 'sticky' app kurallarını etkisiz bırakmak için: */
+.app{ position: fixed !important; }
+
+/* === YENİ GÜÇLÜ DÜZELTME BLOĞU === */
+body {
+  /* 1. Arka planı düzelt (mavi degradeyi iptal et) */
+  background: var(--bg2) !important;
+}
+
+.thread {
+  /* 2. Kart ile mesaj balonu arasını aç */
+  gap: 20px !important;
+}
+
+.inputwrap {
+  /* 3. Alt barı 'safe area' ile düzelt */
+  padding: 10px var(--gutter) calc(env(safe-area-inset-bottom, 20px) + 10px) !important;
+}
+/* === DÜZELTME BLOĞU SONU === */
+
+</style>
+</head>
+<body>
+<div class="phone">
+<!-- üst boş alan (bar yüksekliğinin 1.5 katı) -->
+<!-- sabit mavi üst bant -->
+<div class="topcoat" aria-hidden="true"></div>
+
+  <!-- APP BAR -->
+ <!-- sabit mavi üst bant -->
+<div class="topcoat" aria-hidden="true"></div>
+
+<!-- APP BAR (TEK ADET) -->
+<div class="app">
+  <div class="app-inner">
+    <button class="back" aria-label="Geri">
+      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+
+    <img class="avatar"
+         src="assets/photo1.jpg"
+         alt="Profil"
+         onerror="this.onerror=null;this.src='assets/photo6.jpg';">
+
+    <div class="title">Dursun</div>
+
+    <div class="actions">
+      <div class="btn" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="6" width="12" height="12" rx="3" stroke="white" stroke-width="2"/>
+          <path d="M15 10l6-3v10l-6-3v-4z" fill="white"/>
+        </svg>
+      </div>
+      <div class="btn" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M6 2l4 3-2 3a16 16 0 007 7l3-2 3 4-2 2c-2 2-11-3-14-6S4 4 6 2z"
+                stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="btn" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="white">
+          <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bar kadar boşluk: içerik barın ALTINDAN başlasın -->
+<div class="app-spacer"></div>
+
+
+  <!-- THREAD -->
+<main class="thread">
+    <section class="photo-card">
+     <button class="photo" type="button" data-hd="assets/hamsi.gif">
+        <img src="assets/hamsi.gif" alt="Foto 1">
+      </button>
+          </section>
+    
+    <div class="msg">
+      <strong>İLK İŞ GÜNÜN HAYIRLI OLSUN.</strong>
+      <span class="t">09:35</span>
+    </div>
+  </main>
+
+  <!-- INPUT (mikrofon yok) -->
+  <div class="inputwrap">
+    <div class="input">
+      <div class="ib">😊</div>
+      <input placeholder="Message" aria-label="Mesaj yazın" />
+      <div class="ib">📎</div>
+      <div class="ib">📷</div>
+    </div>
+  </div>
+</div>
+
+<!-- LIGHTBOX -->
+<div id="lightbox" role="dialog" aria-modal="true" aria-label="Fotoğraf görüntüleyici">
+  <button class="close" aria-label="Kapat">✕</button>
+  <img src="" alt="" />
+</div>
+
+<script>
+const lb = document.getElementById('lightbox');
+const lbImg = lb.querySelector('img');
+const closeBtn = lb.querySelector('.close');
+const photos = Array.from(document.querySelectorAll('.photo'));
+
+let idx = 0;
+const srcOf = (el) => el.dataset.hd || el.querySelector('img').src;
+
+function openAt(i){
+  idx = i;
+  lbImg.src = srcOf(photos[idx]);
+  lb.style.display = 'flex';
+}
+function closeLb(){ lb.style.display = 'none'; }
+
+// tıklayınca aç
+photos.forEach((el,i)=>{
+  el.addEventListener('click', (e)=>{ e.preventDefault(); openAt(i); });
 });
 
-// Activate: eski cache'leri temizle + claim
-self.addEventListener('activate', (e) => {
-  e.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys
-      .filter(k => k !== STATIC_CACHE && k !== RUNTIME_CACHE)
-      .map(k => caches.delete(k)));
-    await self.clients.claim();
-  })());
+// kapatma
+closeBtn.addEventListener('click', closeLb);
+lb.addEventListener('click', e=>{ if(e.target === lb) closeLb(); });
+
+// swipe ile ileri/geri
+let startX = null;
+lb.addEventListener('touchstart', e=>{ startX = e.touches[0].clientX; }, {passive:true});
+lb.addEventListener('touchmove', e=>{
+  if(startX === null) return;
+  const dx = e.touches[0].clientX - startX;
+  if (Math.abs(dx) > 60){
+    idx = (idx + (dx<0 ? 1 : -1) + photos.length) % photos.length;
+    lbImg.src = srcOf(photos[idx]);
+    startX = null;
+  }
+}, {passive:true});
+
+// klavye (masaüstü)
+document.addEventListener('keydown', e=>{
+  if (lb.style.display !== 'flex') return;
+  if (e.key === 'Escape') closeLb();
+  if (e.key === 'ArrowRight'){ idx = (idx+1) % photos.length; lbImg.src = srcOf(photos[idx]); }
+  if (e.key === 'ArrowLeft' ){ idx = (idx-1+photos.length) % photos.length; lbImg.src = srcOf(photos[idx]); }
 });
+</script>
 
-// Fetch stratejileri:
-// - HTML ve navigasyon: NETWORK-FIRST (güncel görünüm)
-// - Diğer same-origin GET: STALE-WHILE-REVALIDATE
-self.addEventListener('fetch', (e) => {
-  const req = e.request;
-  const url = new URL(req.url);
-
-  // sadece GET’i ele al
-  if (req.method !== 'GET') return;
-
-  // HTML / sayfa navigasyonu (network-first)
-  const isHTML =
-    req.mode === 'navigate' ||
-    (req.headers.get('accept') || '').includes('text/html');
-
-  if (isHTML) {
-    e.respondWith((async () => {
-      try {
-        const fresh = await fetch(req, { cache: 'no-store' });
-        // index.html'i runtime cache'e koy (offline fallback)
-        const cache = await caches.open(RUNTIME_CACHE);
-        cache.put(req, fresh.clone());
-        return fresh;
-      } catch {
-        const cached = await caches.match(req, { ignoreSearch: true });
-        return cached || caches.match(U('./index.html'));
-      }
-    })());
-    return;
-  }
-
-  // Same-origin diğer GET’ler: stale-while-revalidate
-  if (url.origin === self.location.origin) {
-    e.respondWith((async () => {
-      const cache = await caches.open(RUNTIME_CACHE);
-      const cached = await cache.match(req);
-      const fetchPromise = fetch(req).then((res) => {
-        // yalnızca başarılarda cache’e yaz
-        if (res && res.status === 200) cache.put(req, res.clone());
-        return res;
-      }).catch(() => null);
-      return cached || (await fetchPromise) || cached;
-    })());
-    return;
-  }
-
-  // cross-origin: doğrudan fetch (hata olursa varsa cache’e dön)
-  e.respondWith((async () => {
-    try { return await fetch(req); }
-    catch { return await caches.match(req); }
-  })());
-});
-
-// İsteğe bağlı: sayfa SKIP_WAITING mesajı gönderirse hemen devral
-self.addEventListener('message', (e) => {
-  if (e.data === 'SKIP_WAITING') self.skipWaiting();
-});
+</body>
+</html>
