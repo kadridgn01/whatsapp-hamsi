@@ -614,7 +614,7 @@ body {
   padding: 10px var(--gutter) calc(env(safe-area-inset-bottom, 20px) + 10px) !important;
 }
 /* === DÜZELTME BLOĞU SONU === */
-  /* === YENİ GÜÇLÜ DÜZELTME BLOĞU === */
+/* === YENİ GÜÇLÜ DÜZELTME BLOĞU === */
 body {
   /* 1. Arka planı düzelt (mavi degradeyi iptal et) */
   background: var(--bg2) !important;
@@ -630,12 +630,15 @@ body {
   padding: 10px var(--gutter) calc(env(safe-area-inset-bottom, 20px) + 10px) !important;
 }
 
-/* 4. Hamsinin etrafındaki beyaz çerçeveyi kaldır */
+/* 4. Çerçeveyi kaldır VE BOYUTUNU AYARLA */
 .photo-card {
   background: none !important;
   border: none !important;
   box-shadow: none !important;
   padding: 0 !important;
+
+  /* 5. GIF BOYUTU: Buradaki %60 değerini değiştirerek boyutu ayarla */
+  max-width: 30% !important; /* (Eskisi %86 idi) */
 }
 /* === DÜZELTME BLOĞU SONU === */
 
