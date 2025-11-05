@@ -1,5 +1,5 @@
 // ---- Service Worker (robust) ----
-const VERSION = 'v8';                                   // her yayında artır
+const VERSION = 'v9';                                   // her yayında artır
 const STATIC_CACHE  = `chat-static-${VERSION}`;
 const RUNTIME_CACHE = `chat-runtime-${VERSION}`;
 
